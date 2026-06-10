@@ -4,28 +4,24 @@ import Darwin
 
 // MARK: - libimobiledevice Restore Strategy
 
-/// Restore strategy that uses libimobiledevice's C API via a bridging header.
+/// Restore strategy that uses libimobiledevice's C API via dynamic loading.
 ///
 /// This is the fastest and most reliable method, using the battle-tested
-/// libimobiledevice C library directly. It requires linking the library
-/// as either a static XCFramework or via system package manager (brew on macOS).
+/// libimobiledevice C library directly. On macOS it loads from Homebrew;
+/// on iOS it gracefully falls back since the library is not available.
 ///
-/// Setup instructions:
+/// Setup instructions (macOS only):
 ///   1. Install libimobiledevice:  brew install libimobiledevice
-///   2. Add to Bridging-Header.h:  #import <libimobiledevice/libimobiledevice.h>
-///                                #import <libimobiledevice/mobilebackup2.h>
-///                                #import <libimobiledevice/lockdown.h>
-///   3. Link library: Add -limobiledevice to Other Linker Flags
-///   4. Or use XCFramework: Drag libimobiledevice.xcframework into Frameworks/
+///   2. No project changes needed — everything is resolved at runtime
 ///
 /// Reference: https://github.com/libimobiledevice/libimobiledevice
 struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
     static var displayName: String { "libimobiledevice" }
     static var description: String {
-        "Uses libimobiledevice's C API directly. Fastest and most reliable. "
-        + "Requires linking libimobiledevice (brew install libimobiledevice or XCFramework). "
-        + "Best for macOS builds where you control the environment."
+        "Uses libimobiledevice's C API via dynamic loading. Fastest and most reliable. "
+        + "Requires libimobiledevice installed (brew install libimobiledevice). "
+        + "Only works on macOS; automatically unavailable on iOS."
     }
     static var requiresLibIMD: Bool { true }
     static var requiresPython: Bool { false }
@@ -37,7 +33,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         }
 
         // Check if libimobiledevice symbols are available
-        guard libIMDAvailable else {
+        guard LibIMDLoader.shared.isAvailable else {
             throw RestoreError.libIMDNotLinked
         }
 
@@ -53,44 +49,32 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         }
     }
 
-    // MARK: - C Library Interface
+    // MARK: - Restore Implementation
 
-    /// Check if libimobiledevice symbols are linked and available.
-    private var libIMDAvailable: Bool {
-        // Attempt to get the address of a known symbol
-        // If libimobiledevice is linked, idevice_new will be resolvable
-        let handle = dlopen("libimobiledevice-1.0.dylib", RTLD_NOW)
-        if handle == nil {
-            // Try without version suffix
-            _ = dlopen("libimobiledevice.dylib", RTLD_NOW)
-        }
-        // Also check common system paths (nil handle searches all loaded libraries)
-        let symbol = dlsym(nil, "idevice_new")
-        return symbol != nil
-    }
-
-    /// Main restore implementation using libimobiledevice C API.
+    /// Main restore implementation using dynamically-loaded libimobiledevice C API.
     private func performRestore(backupDir: URL, progress: @escaping (Double) -> Void) throws {
+        let lib = LibIMDLoader.shared
+
         var device: OpaquePointer? = nil
         var lockdown: OpaquePointer? = nil
         var mobilebackup2: OpaquePointer? = nil
 
         defer {
-            if let mb2 = mobilebackup2 { mobilebackup2_client_free(mb2) }
-            if let ld = lockdown { lockdownd_client_free(ld) }
-            if let dev = device { idevice_free(dev) }
+            if let mb2 = mobilebackup2 { lib.mobilebackup2_client_free(mb2) }
+            if let ld = lockdown { lib.lockdownd_client_free(ld) }
+            if let dev = device { lib.idevice_free(dev) }
         }
 
         // Step 1: Get the default device (USB via usbmuxd, or network)
         progress(0.60)
-        var ret = idevice_new(&device, nil)
+        var ret = lib.idevice_new(&device, nil)
         guard ret == IDEVICE_E_SUCCESS else {
             throw RestoreError.connectionFailed("idevice_new failed: \(ret)")
         }
 
         // Step 2: Connect to lockdown
         progress(0.63)
-        ret = lockdownd_client_new_with_handshake(device!, &lockdown, "SiriToggle")
+        ret = lib.lockdownd_client_new_with_handshake(device!, &lockdown, "SiriToggle")
         guard ret == LOCKDOWN_E_SUCCESS else {
             throw RestoreError.connectionFailed("lockdownd_client_new_with_handshake failed: \(ret)")
         }
@@ -98,15 +82,15 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         // Step 3: Start mobilebackup2 service
         progress(0.66)
         var service: lockdownd_service_descriptor_t? = nil
-        ret = lockdownd_start_service(lockdown!, "com.apple.mobilebackup2", &service)
+        ret = lib.lockdownd_start_service(lockdown!, "com.apple.mobilebackup2", &service)
         guard ret == LOCKDOWN_E_SUCCESS, let svc = service else {
             throw RestoreError.connectionFailed("lockdownd_start_service failed: \(ret)")
         }
-        defer { lockdownd_service_descriptor_free(svc) }
+        defer { lib.lockdownd_service_descriptor_free(svc) }
 
         // Step 4: Create mobilebackup2 client
         progress(0.70)
-        ret = mobilebackup2_client_new(device!, svc, &mobilebackup2)
+        ret = lib.mobilebackup2_client_new(device!, svc, &mobilebackup2)
         guard ret == MOBILEBACKUP2_E_SUCCESS else {
             throw RestoreError.connectionFailed("mobilebackup2_client_new failed: \(ret)")
         }
@@ -115,7 +99,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         progress(0.72)
         let versions: [Int32] = [300, 400]
         var versionReceived: Int32 = 0
-        ret = mobilebackup2_version_exchange(
+        ret = lib.mobilebackup2_version_exchange(
             mobilebackup2!,
             versions,
             Int32(versions.count),
@@ -142,7 +126,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         }
 
         let backupPath = backupDir.path
-        ret = mobilebackup2_send_request(
+        ret = lib.mobilebackup2_send_request(
             mobilebackup2!,
             "Restore",
             backupPath,
@@ -155,22 +139,22 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         // Step 7: Message pump — handle DLMessages
         progress(0.80)
-        try runMessagePump(mobilebackup2: mobilebackup2!, backupDir: backupDir, progress: progress)
+        try runMessagePump(lib: lib, mobilebackup2: mobilebackup2!, backupDir: backupDir, progress: progress)
 
         // Step 8: Send disconnect
         progress(0.95)
-        mobilebackup2_send_raw(mobilebackup2!, nil, 0)
+        lib.mobilebackup2_send_raw(mobilebackup2!, nil, 0)
     }
 
     /// Message pump that processes DLMessage responses from the device.
-    private func runMessagePump(mobilebackup2: OpaquePointer, backupDir: URL, progress: @escaping (Double) -> Void) throws {
+    private func runMessagePump(lib: LibIMDLoader, mobilebackup2: OpaquePointer, backupDir: URL, progress: @escaping (Double) -> Void) throws {
         var currentProgress = 0.80
 
         while true {
             var message: UnsafeMutablePointer<Int8>? = nil
             var messageSize: UInt32 = 0
 
-            let ret = mobilebackup2_receive_raw(mobilebackup2, &message, &messageSize)
+            let ret = lib.mobilebackup2_receive_raw(mobilebackup2, &message, &messageSize)
             defer { free(message) }
 
             guard ret == MOBILEBACKUP2_E_SUCCESS else {
@@ -196,18 +180,18 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
                 switch msgType {
                 case "DLMessageDownloadFiles":
-                    try handleDownloadFiles(mobilebackup2: mobilebackup2, message: array, backupDir: backupDir)
+                    try handleDownloadFiles(lib: lib, mobilebackup2: mobilebackup2, message: array, backupDir: backupDir)
                     currentProgress += 0.01
                     progress(min(currentProgress, 0.94))
 
                 case "DLContentsOfDirectory":
-                    try handleContentsOfDirectory(mobilebackup2: mobilebackup2, message: array, backupDir: backupDir)
+                    try handleContentsOfDirectory(lib: lib, mobilebackup2: mobilebackup2, message: array, backupDir: backupDir)
 
                 case "DLMessageCreateDirectory":
-                    try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: 0)
+                    try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: 0)
 
                 case "DLMessageProcessMessage":
-                    if try handleProcessMessage(mobilebackup2: mobilebackup2, message: array) {
+                    if try handleProcessMessage(lib: lib, mobilebackup2: mobilebackup2, message: array) {
                         return  // restore complete
                     }
 
@@ -215,20 +199,20 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
                     return
 
                 case "DLPing":
-                    try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: 0)
+                    try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: 0)
 
                 default:
-                    try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: 0)
+                    try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: 0)
                 }
             }
         }
     }
 
     /// Handle DLMessageDownloadFiles using libimobiledevice send functions.
-    private func handleDownloadFiles(mobilebackup2: OpaquePointer, message: [Any], backupDir: URL) throws {
+    private func handleDownloadFiles(lib: LibIMDLoader, mobilebackup2: OpaquePointer, message: [Any], backupDir: URL) throws {
         guard message.count >= 2,
               let fileList = message[1] as? [String] else {
-            try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: -6)
+            try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: -6)
             return
         }
 
@@ -242,7 +226,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
                let fileData = try? Data(contentsOf: fileURL) {
                 // Send file data
                 let ret = fileData.withUnsafeBytes { rawBuffer in
-                    mobilebackup2_send_raw(
+                    lib.mobilebackup2_send_raw(
                         mobilebackup2,
                         rawBuffer.baseAddress?.assumingMemoryBound(to: Int8.self),
                         UInt32(fileData.count)
@@ -257,7 +241,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
                 // Send 0-length for missing file
                 var zero: Int32 = 0
                 withUnsafeBytes(of: &zero) { rawBuffer in
-                    mobilebackup2_send_raw(
+                    lib.mobilebackup2_send_raw(
                         mobilebackup2,
                         rawBuffer.baseAddress?.assumingMemoryBound(to: Int8.self),
                         4
@@ -275,7 +259,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         ]
         let statusData = try PropertyListSerialization.data(fromPropertyList: statusMsg, format: .binary, options: 0)
         statusData.withUnsafeBytes { rawBuffer in
-            mobilebackup2_send_raw(
+            lib.mobilebackup2_send_raw(
                 mobilebackup2,
                 rawBuffer.baseAddress?.assumingMemoryBound(to: Int8.self),
                 UInt32(statusData.count)
@@ -284,10 +268,10 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Handle DLContentsOfDirectory.
-    private func handleContentsOfDirectory(mobilebackup2: OpaquePointer, message: [Any], backupDir: URL) throws {
+    private func handleContentsOfDirectory(lib: LibIMDLoader, mobilebackup2: OpaquePointer, message: [Any], backupDir: URL) throws {
         guard message.count >= 2,
               let dirPath = message[1] as? String else {
-            try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: -6)
+            try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: -6)
             return
         }
 
@@ -313,7 +297,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         ]
         let data = try PropertyListSerialization.data(fromPropertyList: response, format: .binary, options: 0)
         data.withUnsafeBytes { rawBuffer in
-            mobilebackup2_send_raw(
+            lib.mobilebackup2_send_raw(
                 mobilebackup2,
                 rawBuffer.baseAddress?.assumingMemoryBound(to: Int8.self),
                 UInt32(data.count)
@@ -322,10 +306,10 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Handle DLMessageProcessMessage — check for completion or errors.
-    private func handleProcessMessage(mobilebackup2: OpaquePointer, message: [Any]) throws -> Bool {
+    private func handleProcessMessage(lib: LibIMDLoader, mobilebackup2: OpaquePointer, message: [Any]) throws -> Bool {
         guard message.count >= 2,
               let processMsg = message[1] as? [String: Any] else {
-            try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: -6)
+            try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: -6)
             return false
         }
 
@@ -336,20 +320,20 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         if let messageName = processMsg["MessageName"] as? String,
            (messageName.contains("Finished") || messageName.contains("Complete")) {
-            try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: 0)
+            try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: 0)
             return true
         }
 
-        try sendStatusResponse(mobilebackup2: mobilebackup2, statusCode: 0)
+        try sendStatusResponse(lib: lib, mobilebackup2: mobilebackup2, statusCode: 0)
         return false
     }
 
     /// Send a status response message.
-    private func sendStatusResponse(mobilebackup2: OpaquePointer, statusCode: Int) throws {
+    private func sendStatusResponse(lib: LibIMDLoader, mobilebackup2: OpaquePointer, statusCode: Int) throws {
         let msg: [Any] = ["DLMessageStatusResponse", UInt32(statusCode)]
         let data = try PropertyListSerialization.data(fromPropertyList: msg, format: .binary, options: 0)
         data.withUnsafeBytes { rawBuffer in
-            mobilebackup2_send_raw(
+            lib.mobilebackup2_send_raw(
                 mobilebackup2,
                 rawBuffer.baseAddress?.assumingMemoryBound(to: Int8.self),
                 UInt32(data.count)
@@ -367,10 +351,6 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
 // MARK: - C API Type Aliases and Constants
 
-// These mirror the libimobiledevice C headers.
-// When libimobiledevice is properly linked, these should come from the headers.
-// These declarations serve as fallback definitions for compilation.
-
 private typealias idevice_t = OpaquePointer
 private typealias lockdownd_client_t = OpaquePointer
 private typealias mobilebackup2_client_t = OpaquePointer
@@ -386,76 +366,175 @@ private let MOBILEBACKUP2_E_SUCCESS: mobilebackup2_error_t = 0
 private let MOBILEBACKUP2_E_INVALID_ARG: mobilebackup2_error_t = -1
 private typealias mobilebackup2_error_t = Int32
 
-// MARK: - C Function Declarations
+// MARK: - Dynamic Loader
 
-// These will resolve when libimobiledevice is linked.
-// They are declared as optional (@_silgen_name) so compilation succeeds
-// even without the library — runtime availability is checked via libIMDAvailable.
+/// Dynamically loads libimobiledevice functions at runtime using dlopen/dlsym.
+/// This avoids linker errors when the library is not present (e.g., on iOS).
+final class LibIMDLoader {
 
-@_silgen_name("idevice_new")
-private func idevice_new(_ device: UnsafeMutablePointer<idevice_t?>?, _ udid: UnsafePointer<CChar>?) -> idevice_error_t
+    static let shared = LibIMDLoader()
 
-@_silgen_name("idevice_free")
-private func idevice_free(_ device: idevice_t)
+    /// Whether libimobiledevice was successfully loaded and all symbols resolved.
+    private(set) var isAvailable: Bool = false
 
-@_silgen_name("lockdownd_client_new_with_handshake")
-private func lockdownd_client_new_with_handshake(
-    _ device: idevice_t,
-    _ client: UnsafeMutablePointer<lockdownd_client_t?>?,
-    _ label: UnsafePointer<CChar>?
-) -> lockdownd_error_t
+    // Function pointer types matching libimobiledevice C API
+    typealias idevice_new_fn = @convention(c) (
+        UnsafeMutablePointer<OpaquePointer?>?,
+        UnsafePointer<CChar>?
+    ) -> Int32
 
-@_silgen_name("lockdownd_client_free")
-private func lockdownd_client_free(_ client: lockdownd_client_t)
+    typealias idevice_free_fn = @convention(c) (
+        OpaquePointer
+    ) -> Void
 
-@_silgen_name("lockdownd_start_service")
-private func lockdownd_start_service(
-    _ client: lockdownd_client_t,
-    _ service: UnsafePointer<CChar>?,
-    _ descriptor: UnsafeMutablePointer<lockdownd_service_descriptor_t?>?
-) -> lockdownd_error_t
+    typealias lockdownd_client_new_with_handshake_fn = @convention(c) (
+        OpaquePointer,
+        UnsafeMutablePointer<OpaquePointer?>?,
+        UnsafePointer<CChar>?
+    ) -> Int32
 
-@_silgen_name("lockdownd_service_descriptor_free")
-private func lockdownd_service_descriptor_free(_ service: lockdownd_service_descriptor_t)
+    typealias lockdownd_client_free_fn = @convention(c) (
+        OpaquePointer
+    ) -> Void
 
-@_silgen_name("mobilebackup2_client_new")
-private func mobilebackup2_client_new(
-    _ device: idevice_t,
-    _ service: lockdownd_service_descriptor_t,
-    _ client: UnsafeMutablePointer<mobilebackup2_client_t?>?
-) -> mobilebackup2_error_t
+    typealias lockdownd_start_service_fn = @convention(c) (
+        OpaquePointer,
+        UnsafePointer<CChar>?,
+        UnsafeMutablePointer<OpaquePointer?>?
+    ) -> Int32
 
-@_silgen_name("mobilebackup2_client_free")
-private func mobilebackup2_client_free(_ client: mobilebackup2_client_t)
+    typealias lockdownd_service_descriptor_free_fn = @convention(c) (
+        OpaquePointer?
+    ) -> Void
 
-@_silgen_name("mobilebackup2_version_exchange")
-private func mobilebackup2_version_exchange(
-    _ client: mobilebackup2_client_t,
-    _ local_versions: UnsafePointer<Int32>?,
-    _ count: Int32,
-    _ remote_version: UnsafeMutablePointer<Int32>?,
-    _ match: UnsafePointer<CChar>?
-) -> mobilebackup2_error_t
+    typealias mobilebackup2_client_new_fn = @convention(c) (
+        OpaquePointer,
+        OpaquePointer?,
+        UnsafeMutablePointer<OpaquePointer?>?
+    ) -> Int32
 
-@_silgen_name("mobilebackup2_send_request")
-private func mobilebackup2_send_request(
-    _ client: mobilebackup2_client_t,
-    _ request: UnsafePointer<CChar>?,
-    _ backupPath: UnsafePointer<CChar>?,
-    _ opts: UnsafePointer<CChar>?,
-    _ dlmessage: UnsafeMutablePointer<UnsafeMutablePointer<Int8>?>?
-) -> mobilebackup2_error_t
+    typealias mobilebackup2_client_free_fn = @convention(c) (
+        OpaquePointer
+    ) -> Void
 
-@_silgen_name("mobilebackup2_receive_raw")
-private func mobilebackup2_receive_raw(
-    _ client: mobilebackup2_client_t,
-    _ data: UnsafeMutablePointer<UnsafeMutablePointer<Int8>?>?,
-    _ size: UnsafeMutablePointer<UInt32>?
-) -> mobilebackup2_error_t
+    typealias mobilebackup2_version_exchange_fn = @convention(c) (
+        OpaquePointer,
+        UnsafePointer<Int32>?,
+        Int32,
+        UnsafeMutablePointer<Int32>?,
+        UnsafePointer<CChar>?
+    ) -> Int32
 
-@_silgen_name("mobilebackup2_send_raw")
-private func mobilebackup2_send_raw(
-    _ client: mobilebackup2_client_t,
-    _ data: UnsafePointer<Int8>?,
-    _ length: UInt32
-) -> mobilebackup2_error_t
+    typealias mobilebackup2_send_request_fn = @convention(c) (
+        OpaquePointer,
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?,
+        UnsafePointer<CChar>?,
+        UnsafeMutablePointer<UnsafeMutablePointer<Int8>?>?
+    ) -> Int32
+
+    typealias mobilebackup2_receive_raw_fn = @convention(c) (
+        OpaquePointer,
+        UnsafeMutablePointer<UnsafeMutablePointer<Int8>?>?,
+        UnsafeMutablePointer<UInt32>?
+    ) -> Int32
+
+    typealias mobilebackup2_send_raw_fn = @convention(c) (
+        OpaquePointer,
+        UnsafePointer<Int8>?,
+        UInt32
+    ) -> Int32
+
+    // Function pointer storage
+    private(set) var idevice_new: idevice_new_fn!
+    private(set) var idevice_free: idevice_free_fn!
+    private(set) var lockdownd_client_new_with_handshake: lockdownd_client_new_with_handshake_fn!
+    private(set) var lockdownd_client_free: lockdownd_client_free_fn!
+    private(set) var lockdownd_start_service: lockdownd_start_service_fn!
+    private(set) var lockdownd_service_descriptor_free: lockdownd_service_descriptor_free_fn!
+    private(set) var mobilebackup2_client_new: mobilebackup2_client_new_fn!
+    private(set) var mobilebackup2_client_free: mobilebackup2_client_free_fn!
+    private(set) var mobilebackup2_version_exchange: mobilebackup2_version_exchange_fn!
+    private(set) var mobilebackup2_send_request: mobilebackup2_send_request_fn!
+    private(set) var mobilebackup2_receive_raw: mobilebackup2_receive_raw_fn!
+    private(set) var mobilebackup2_send_raw: mobilebackup2_send_raw_fn!
+
+    private init() {
+        // Attempt to load libimobiledevice
+        let handle = loadLibrary()
+        guard handle != nil else {
+            isAvailable = false
+            return
+        }
+
+        // Resolve all required symbols
+        guard resolveAllSymbols(handle: handle!) else {
+            isAvailable = false
+            // Don't dlclose — the library may be needed by other code
+            return
+        }
+
+        isAvailable = true
+    }
+
+    /// Try to load libimobiledevice from various known paths.
+    private func loadLibrary() -> UnsafeMutableRawPointer? {
+        let paths = [
+            // Homebrew Apple Silicon
+            "/opt/homebrew/lib/libimobiledevice-1.0.dylib",
+            // Homebrew Intel
+            "/usr/local/lib/libimobiledevice-1.0.dylib",
+            // MacPorts
+            "/opt/local/lib/libimobiledevice-1.0.dylib",
+            // Unversioned fallback
+            "/opt/homebrew/lib/libimobiledevice.dylib",
+            "/usr/local/lib/libimobiledevice.dylib",
+            // System search path (will find if in DYLD_LIBRARY_PATH)
+            "libimobiledevice-1.0.dylib",
+            "libimobiledevice.dylib",
+        ]
+
+        for path in paths {
+            if let handle = dlopen(path, RTLD_NOW | RTLD_GLOBAL) {
+                return handle
+            }
+        }
+
+        return nil
+    }
+
+    /// Resolve all required symbols from the loaded library.
+    private func resolveAllSymbols(handle: UnsafeMutableRawPointer) -> Bool {
+        let symbols: [(String, UnsafeMutableRawPointer?) -> Bool] = [
+            resolve("idevice_new",                \.idevice_new),
+            resolve("idevice_free",               \.idevice_free),
+            resolve("lockdownd_client_new_with_handshake", \.lockdownd_client_new_with_handshake),
+            resolve("lockdownd_client_free",      \.lockdownd_client_free),
+            resolve("lockdownd_start_service",    \.lockdownd_start_service),
+            resolve("lockdownd_service_descriptor_free", \.lockdownd_service_descriptor_free),
+            resolve("mobilebackup2_client_new",   \.mobilebackup2_client_new),
+            resolve("mobilebackup2_client_free",  \.mobilebackup2_client_free),
+            resolve("mobilebackup2_version_exchange", \.mobilebackup2_version_exchange),
+            resolve("mobilebackup2_send_request", \.mobilebackup2_send_request),
+            resolve("mobilebackup2_receive_raw",  \.mobilebackup2_receive_raw),
+            resolve("mobilebackup2_send_raw",     \.mobilebackup2_send_raw),
+        ]
+
+        for sym in symbols {
+            if !sym(handle) { return false }
+        }
+
+        return true
+    }
+
+    /// Helper to resolve a single symbol and assign it to the given keypath.
+    private func resolve<T>(_ name: String, _ keyPath: ReferenceWritableKeyPath<LibIMDLoader, T>) -> (UnsafeMutableRawPointer) -> Bool {
+        return { handle in
+            guard let ptr = dlsym(handle, name) else {
+                return false
+            }
+            self[keyPath: keyPath] = unsafeBitCast(ptr, to: T.self)
+            return true
+        }
+    }
+}
