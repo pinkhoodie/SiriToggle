@@ -61,7 +61,6 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
         // Step 1: Connect to lockdown via minimuxer tunnel
         progress(0.60)
         let lockdownConn = try await connectToLockdown()
-        defer { lockdownConn.close() }
 
         // Step 2: Start session
         progress(0.63)
@@ -70,7 +69,6 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
         // Step 3: Start mobilebackup2 service
         progress(0.66)
         let mb2Conn = try await startService(lockdownConn, serviceName: "com.apple.mobilebackup2")
-        defer { mb2Conn.close() }
 
         // Step 4: Version exchange
         progress(0.70)
@@ -94,7 +92,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     /// Simple TCP connection wrapper using Foundation's Socket API.
     private func connectTCP(host: String, port: UInt16) async throws -> TCPConnection {
         let conn = TCPConnection(host: host, port: port)
-        try await conn.connect(timeout: 10)
+        try await conn.openConnection(timeout: 10)
         return conn
     }
 
@@ -236,7 +234,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
                 try await handleCopyItem(conn, message: msg!)
 
             case DLMessage.processMessage.rawValue:
-                if let result = try await handleProcessMessage(conn, message: msg!) {
+                if try await handleProcessMessage(conn, message: msg!) {
                     // Restore completed
                     return
                 }
@@ -444,7 +442,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     private func sendStatusResponse(_ conn: TCPConnection, status: Int, details: String? = nil) async throws {
         var response: [Any] = [
             DLMessage.statusResponse.rawValue,
-            status as UInt32
+            UInt32(status)
         ]
         if let details = details {
             response.append(details)
@@ -476,8 +474,8 @@ actor TCPConnection {
         self.port = port
     }
 
-    /// Connect with timeout.
-    func connect(timeout: TimeInterval) async throws {
+    /// Open a TCP connection with timeout.
+    func openConnection(timeout: TimeInterval) async throws {
         // Create socket
         socketFD = socket(AF_INET, SOCK_STREAM, 0)
         guard socketFD >= 0 else {
@@ -497,7 +495,7 @@ actor TCPConnection {
         // Attempt connect
         let connectResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                Darwin.connect(socketFD, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
 
@@ -505,11 +503,11 @@ actor TCPConnection {
             // Wait for connection with timeout using poll
             var pollFD = pollfd(fd: socketFD, events: Int16(POLLOUT), revents: 0)
             let pollResult = withUnsafeMutablePointer(to: &pollFD) {
-                poll($0, 1, Int32(timeout * 1000))
+                Darwin.poll($0, 1, Int32(timeout * 1000))
             }
 
             if pollResult <= 0 {
-                close(socketFD)
+                Darwin.close(socketFD)
                 socketFD = -1
                 throw RestoreError.connectionFailed(pollResult == 0 ? "Connection timeout" : "Connection failed (errno: \(errno))")
             }
@@ -517,14 +515,14 @@ actor TCPConnection {
             // Check if connection actually succeeded
             var soError: Int32 = 0
             var soErrorLen = socklen_t(MemoryLayout<Int32>.size)
-            getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &soError, &soErrorLen)
+            Darwin.getsockopt(socketFD, SOL_SOCKET, SO_ERROR, &soError, &soErrorLen)
             guard soError == 0 else {
-                close(socketFD)
+                Darwin.close(socketFD)
                 socketFD = -1
                 throw RestoreError.connectionFailed("Connection failed (errno: \(soError))")
             }
         } else if connectResult < 0 {
-            close(socketFD)
+            Darwin.close(socketFD)
             socketFD = -1
             throw RestoreError.connectionFailed("Connect failed immediately (errno: \(errno))")
         }
@@ -542,7 +540,7 @@ actor TCPConnection {
             throw RestoreError.connectionFailed("Not connected")
         }
         let written = data.withUnsafeBytes { buffer in
-            send(socketFD, buffer.baseAddress!, buffer.count, 0)
+            Darwin.send(socketFD, buffer.baseAddress!, buffer.count, 0)
         }
         guard written == data.count else {
             throw RestoreError.connectionFailed("Write failed (errno: \(errno))")
@@ -559,7 +557,7 @@ actor TCPConnection {
         while totalRead < count {
             let remaining = count - totalRead
             let bytesRead = buffer.withUnsafeMutableBytes { rawBuffer in
-                recv(socketFD, rawBuffer.baseAddress!.advanced(by: totalRead), remaining, 0)
+                Darwin.recv(socketFD, rawBuffer.baseAddress!.advanced(by: totalRead), remaining, 0)
             }
             guard bytesRead > 0 else {
                 throw RestoreError.connectionFailed("Read failed (errno: \(errno), read: \(bytesRead))")
@@ -569,8 +567,8 @@ actor TCPConnection {
         return buffer
     }
 
-    /// Close the connection.
-    func close() {
+    /// Disconnect and close the socket.
+    func disconnect() {
         if socketFD >= 0 {
             Darwin.close(socketFD)
             socketFD = -1

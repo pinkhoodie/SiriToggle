@@ -61,6 +61,7 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
 
     /// Check if Python 3 is installed and pymobiledevice3 is available.
     private func pythonAvailable() async throws -> Bool {
+        #if os(macOS)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [pythonExecutable, "-c", "import pymobiledevice3; print('ok')"]
@@ -75,12 +76,16 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(data: data, encoding: .utf8) ?? ""
         return process.terminationStatus == 0 && output.contains("ok")
+        #else
+        return false
+        #endif
     }
 
     // MARK: - Run Python Script
 
     /// Execute the Python restore script and parse its JSON line output.
     private func runPythonScript(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+        #if os(macOS)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [pythonExecutable, scriptPath, backupDir.path]
@@ -160,6 +165,9 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
                 }
             }
         }
+        #else
+        throw RestoreError.pythonNotFound
+        #endif
     }
 
     /// Parse a JSON message from the Python script.

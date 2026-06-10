@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Darwin
 
 // MARK: - libimobiledevice Restore Strategy
 
@@ -75,9 +76,9 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         var mobilebackup2: OpaquePointer? = nil
 
         defer {
-            if mobilebackup2 != nil { mobilebackup2_client_free(mobilebackup2) }
-            if lockdown != nil { lockdownd_client_free(lockdown) }
-            if device != nil { idevice_free(device) }
+            if let mb2 = mobilebackup2 { mobilebackup2_client_free(mb2) }
+            if let ld = lockdown { lockdownd_client_free(ld) }
+            if let dev = device { idevice_free(dev) }
         }
 
         // Step 1: Get the default device (USB via usbmuxd, or network)
@@ -89,7 +90,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         // Step 2: Connect to lockdown
         progress(0.63)
-        ret = lockdownd_client_new_with_handshake(device, &lockdown, "SiriToggle")
+        ret = lockdownd_client_new_with_handshake(device!, &lockdown, "SiriToggle")
         guard ret == LOCKDOWN_E_SUCCESS else {
             throw RestoreError.connectionFailed("lockdownd_client_new_with_handshake failed: \(ret)")
         }
@@ -97,7 +98,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         // Step 3: Start mobilebackup2 service
         progress(0.66)
         var service: lockdownd_service_descriptor_t? = nil
-        ret = lockdownd_start_service(lockdown, "com.apple.mobilebackup2", &service)
+        ret = lockdownd_start_service(lockdown!, "com.apple.mobilebackup2", &service)
         guard ret == LOCKDOWN_E_SUCCESS, let svc = service else {
             throw RestoreError.connectionFailed("lockdownd_start_service failed: \(ret)")
         }
@@ -105,7 +106,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         // Step 4: Create mobilebackup2 client
         progress(0.70)
-        ret = mobilebackup2_client_new(device, svc, &mobilebackup2)
+        ret = mobilebackup2_client_new(device!, svc, &mobilebackup2)
         guard ret == MOBILEBACKUP2_E_SUCCESS else {
             throw RestoreError.connectionFailed("mobilebackup2_client_new failed: \(ret)")
         }
@@ -115,7 +116,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
         let versions: [Int32] = [300, 400]
         var versionReceived: Int32 = 0
         ret = mobilebackup2_version_exchange(
-            mobilebackup2,
+            mobilebackup2!,
             versions,
             Int32(versions.count),
             &versionReceived,
@@ -142,7 +143,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         let backupPath = backupDir.path
         ret = mobilebackup2_send_request(
-            mobilebackup2,
+            mobilebackup2!,
             "Restore",
             backupPath,
             optionsString,
@@ -158,7 +159,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
         // Step 8: Send disconnect
         progress(0.95)
-        mobilebackup2_send_raw(mobilebackup2, nil, 0)
+        mobilebackup2_send_raw(mobilebackup2!, nil, 0)
     }
 
     /// Message pump that processes DLMessage responses from the device.
@@ -345,7 +346,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 
     /// Send a status response message.
     private func sendStatusResponse(mobilebackup2: OpaquePointer, statusCode: Int) throws {
-        let msg: [Any] = ["DLMessageStatusResponse", statusCode as UInt32]
+        let msg: [Any] = ["DLMessageStatusResponse", UInt32(statusCode)]
         let data = try PropertyListSerialization.data(fromPropertyList: msg, format: .binary, options: 0)
         data.withUnsafeBytes { rawBuffer in
             mobilebackup2_send_raw(
