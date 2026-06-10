@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var showFilePicker = false
     @State private var showRebootAlert = false
     @State private var showInfoSheet = false
+    @State private var showStrategyPicker = false
 
     var body: some View {
         ZStack {
@@ -25,7 +26,25 @@ struct ContentView: View {
                 // MARK: - Header
                 VStack(spacing: 6) {
                     HStack {
+                        // Strategy picker button
+                        Button {
+                            showStrategyPicker = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "gearshape.2.fill")
+                                    .font(.system(size: 13))
+                                Text(engine.selectedStrategy.displayName)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(.gray)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(8)
+                        }
+
                         Spacer()
+
                         Button {
                             showInfoSheet = true
                         } label: {
@@ -67,8 +86,7 @@ struct ContentView: View {
                 ToggleCardView(
                     isOn: $isEnabled,
                     disabled: !pairingManager.hasPairingFile
-                        || engine.status == .restoring
-                        || engine.status == .building
+                        || engine.isRunning
                 )
                 .padding(.horizontal, 24)
                 .onChange(of: isEnabled) { newValue in
@@ -89,7 +107,7 @@ struct ContentView: View {
                     statusView
                         .padding(.top, 20)
 
-                    if engine.status == .building || engine.status == .restoring {
+                    if engine.isRunning {
                         ProgressView(value: engine.progress)
                             .tint(.purple)
                             .padding(.horizontal, 48)
@@ -99,11 +117,17 @@ struct ContentView: View {
 
                 Spacer()
 
-                // MARK: - Footer note
-                Text("Requires iOS 27 Beta · Developer Mode · Pairing File")
-                    .font(.system(size: 10))
-                    .foregroundColor(Color.gray.opacity(0.5))
-                    .padding(.bottom, 24)
+                // MARK: - Footer
+                VStack(spacing: 4) {
+                    Text("Strategy: \(engine.selectedStrategy.displayName)")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color.gray.opacity(0.5))
+
+                    Text("Requires iOS 27 Beta · Developer Mode · Pairing File")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color.gray.opacity(0.5))
+                }
+                .padding(.bottom, 24)
             }
         }
         // MARK: - File Picker
@@ -130,9 +154,12 @@ struct ContentView: View {
         } message: {
             Text("The change has been applied. Reboot your device to activate the new Siri AI.")
         }
-        // MARK: - Info Sheet
+        // MARK: - Sheets
         .sheet(isPresented: $showInfoSheet) {
             InfoSheetView()
+        }
+        .sheet(isPresented: $showStrategyPicker) {
+            StrategyPickerView(engine: engine)
         }
     }
 
@@ -203,17 +230,26 @@ struct ContentView: View {
                      ? "Ready — use the toggle above"
                      : "Import your pairing file to begin")
                     .foregroundColor(.gray)
+
             case .building:
                 Label("Building payload…", systemImage: "hammer.fill")
                     .foregroundColor(.yellow)
-            case .restoring:
-                Label("Applying via BookRestore…", systemImage: "arrow.clockwise.circle.fill")
-                    .foregroundColor(.blue)
+
+            case .restoring(let strategyName):
+                VStack(spacing: 4) {
+                    Label("Applying via \(strategyName)…", systemImage: "arrow.clockwise.circle.fill")
+                        .foregroundColor(.blue)
+                    Text("Falling back automatically if needed")
+                        .font(.system(size: 10))
+                        .foregroundColor(.gray)
+                }
+
             case .success:
                 Label("Applied — reboot to activate", systemImage: "checkmark.circle.fill")
                     .foregroundColor(.green)
+
             case .failed(let msg):
-                VStack(spacing: 4) {
+                VStack(spacing: 6) {
                     Label("Failed", systemImage: "xmark.circle.fill")
                         .foregroundColor(.red)
                     Text(msg)
@@ -221,6 +257,12 @@ struct ContentView: View {
                         .foregroundColor(Color.red.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 32)
+                    // Retry hint
+                    if msg.contains("not yet wired") || msg.contains("not yet implemented") {
+                        Text("Select a different strategy via the gear button above")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.purple)
+                    }
                 }
             }
         }

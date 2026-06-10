@@ -17,6 +17,12 @@
 		A1000008 /* PlistPayloadBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000008 /* PlistPayloadBuilder.swift */; };
 		A1000009 /* BackupManifestBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000009 /* BackupManifestBuilder.swift */; };
 		A100000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A200000A /* Assets.xcassets */; };
+		A100000B /* RestoreStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000B /* RestoreStrategy.swift */; };
+		A100000C /* PureSwiftRestoreStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000C /* PureSwiftRestoreStrategy.swift */; };
+		A100000D /* LibIMDRestoreStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000D /* LibIMDRestoreStrategy.swift */; };
+		A100000E /* PythonBridgeRestoreStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000E /* PythonBridgeRestoreStrategy.swift */; };
+		A100000F /* StrategyPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000F /* StrategyPickerView.swift */; };
+		A1000010 /* restore_via_python.py in Resources */ = {isa = PBXBuildFile; fileRef = A2000010 /* restore_via_python.py */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +38,12 @@
 		A200000A /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A200000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A200000C /* SiriToggle-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "SiriToggle-Bridging-Header.h"; sourceTree = "<group>"; };
+		A200000B /* RestoreStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestoreStrategy.swift; sourceTree = "<group>"; };
+		A200000C /* PureSwiftRestoreStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PureSwiftRestoreStrategy.swift; sourceTree = "<group>"; };
+		A200000D /* LibIMDRestoreStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibIMDRestoreStrategy.swift; sourceTree = "<group>"; };
+		A200000E /* PythonBridgeRestoreStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonBridgeRestoreStrategy.swift; sourceTree = "<group>"; };
+		A200000F /* StrategyPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrategyPickerView.swift; sourceTree = "<group>"; };
+		A2000010 /* restore_via_python.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = restore_via_python.py; sourceTree = "<group>"; };
 		A3000001 /* SiriToggle.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SiriToggle.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -52,6 +64,7 @@
 				A5000002 /* App */,
 				A5000003 /* Core */,
 				A5000004 /* UI */,
+				A5000007 /* Python */,
 				A5000005 /* Resources */,
 				A200000B /* Info.plist */,
 				A200000C /* SiriToggle-Bridging-Header.h */,
@@ -71,11 +84,15 @@
 		A5000003 /* Core */ = {
 			isa = PBXGroup;
 			children = (
+				A200000B /* RestoreStrategy.swift */,
 				A2000005 /* PairingFileManager.swift */,
 				A2000006 /* MinimuxerBridge.swift */,
 				A2000007 /* BookRestoreEngine.swift */,
 				A2000008 /* PlistPayloadBuilder.swift */,
 				A2000009 /* BackupManifestBuilder.swift */,
+				A200000C /* PureSwiftRestoreStrategy.swift */,
+				A200000D /* LibIMDRestoreStrategy.swift */,
+				A200000E /* PythonBridgeRestoreStrategy.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -85,8 +102,17 @@
 			children = (
 				A2000003 /* ToggleCardView.swift */,
 				A2000004 /* InfoSheetView.swift */,
+				A200000F /* StrategyPickerView.swift */,
 			);
 			path = UI;
+			sourceTree = "<group>";
+		};
+		A5000007 /* Python */ = {
+			isa = PBXGroup;
+			children = (
+				A2000010 /* restore_via_python.py */,
+			);
+			path = Python;
 			sourceTree = "<group>";
 		};
 		A5000005 /* Resources */ = {
@@ -172,6 +198,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A100000A /* Assets.xcassets in Resources */,
+				A1000010 /* restore_via_python.py in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -191,6 +218,11 @@
 				A1000007 /* BookRestoreEngine.swift in Sources */,
 				A1000008 /* PlistPayloadBuilder.swift in Sources */,
 				A1000009 /* BackupManifestBuilder.swift in Sources */,
+				A100000B /* RestoreStrategy.swift in Sources */,
+				A100000C /* PureSwiftRestoreStrategy.swift in Sources */,
+				A100000D /* LibIMDRestoreStrategy.swift in Sources */,
+				A100000E /* PythonBridgeRestoreStrategy.swift in Sources */,
+				A100000F /* StrategyPickerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
