@@ -354,7 +354,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
 private typealias idevice_t = OpaquePointer
 private typealias lockdownd_client_t = OpaquePointer
 private typealias mobilebackup2_client_t = OpaquePointer
-private typealias lockdownd_service_descriptor_t = OpaquePointer?
+private typealias lockdownd_service_descriptor_t = OpaquePointer
 
 private let IDEVICE_E_SUCCESS: idevice_error_t = 0
 private typealias idevice_error_t = Int32
@@ -505,7 +505,7 @@ final class LibIMDLoader {
 
     /// Resolve all required symbols from the loaded library.
     private func resolveAllSymbols(handle: UnsafeMutableRawPointer) -> Bool {
-        let symbols: [(String, UnsafeMutableRawPointer?) -> Bool] = [
+        let resolvers: [(UnsafeMutableRawPointer) -> Bool] = [
             resolve("idevice_new",                \.idevice_new),
             resolve("idevice_free",               \.idevice_free),
             resolve("lockdownd_client_new_with_handshake", \.lockdownd_client_new_with_handshake),
@@ -520,8 +520,8 @@ final class LibIMDLoader {
             resolve("mobilebackup2_send_raw",     \.mobilebackup2_send_raw),
         ]
 
-        for sym in symbols {
-            if !sym(handle) { return false }
+        for r in resolvers {
+            if !r(handle) { return false }
         }
 
         return true
@@ -530,9 +530,10 @@ final class LibIMDLoader {
     /// Helper to resolve a single symbol and assign it to the given keypath.
     private func resolve<T>(_ name: String, _ keyPath: ReferenceWritableKeyPath<LibIMDLoader, T>) -> (UnsafeMutableRawPointer) -> Bool {
         return { handle in
-            guard let ptr = dlsym(handle, name) else {
-                return false
+            let ptr = name.withCString { cName in
+                dlsym(handle, cName)
             }
+            guard ptr != nil else { return false }
             self[keyPath: keyPath] = unsafeBitCast(ptr, to: T.self)
             return true
         }
