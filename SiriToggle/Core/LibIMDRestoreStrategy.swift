@@ -64,8 +64,8 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
             // Try without version suffix
             _ = dlopen("libimobiledevice.dylib", RTLD_NOW)
         }
-        // Also check common system paths
-        let symbol = dlsym(RTLD_DEFAULT, "idevice_new")
+        // Also check common system paths (nil handle searches all loaded libraries)
+        let symbol = dlsym(nil, "idevice_new")
         return symbol != nil
     }
 
