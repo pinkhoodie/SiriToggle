@@ -29,7 +29,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
     static var requiresPython: Bool { false }
     static var worksOnDevice: Bool { false }
 
-    func restore(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+    func restore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard FileManager.default.fileExists(atPath: backupDir.path) else {
             throw RestoreError.backupDirNotFound
         }
@@ -68,7 +68,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Main restore implementation using libimobiledevice C API.
-    private func performRestore(backupDir: URL, progress: @escaping (Double) -> Void) throws {
+    private func performRestore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) throws {
         var device: OpaquePointer? = nil
         var lockdown: OpaquePointer? = nil
         var mobilebackup2: OpaquePointer? = nil
@@ -161,7 +161,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Message pump that processes DLMessage responses from the device.
-    private func runMessagePump(mobilebackup2: OpaquePointer, backupDir: URL, progress: @escaping (Double) -> Void) throws {
+    private func runMessagePump(mobilebackup2: OpaquePointer, backupDir: URL, progress: @escaping @Sendable (Double) -> Void) throws {
         var currentProgress = 0.80
 
         while true {
@@ -184,7 +184,7 @@ struct LibIMDRestoreStrategy: RestoreStrategyProtocol {
             }
 
             // Parse plist from raw data
-            let data = Data(bytes: msgData, count: Int(messageSize))
+            let data = Data(bytesNoCopy: msgData, count: Int(messageSize), deallocator: .none)
             guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) else {
                 continue
             }

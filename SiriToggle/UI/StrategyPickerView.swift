@@ -33,7 +33,7 @@ struct StrategyPickerView: View {
                 // MARK: - Strategy Options
                 Section(header: Text("Available Strategies")) {
                     ForEach(RestoreStrategy.allCases) { strategy in
-                        StrategyRow(
+                        strategyRow(
                             strategy: strategy,
                             isSelected: engine.selectedStrategy == strategy
                         )
@@ -103,7 +103,7 @@ struct StrategyPickerView: View {
     // MARK: - Strategy Row
 
     @ViewBuilder
-    private func StrategyRow(strategy: RestoreStrategy, isSelected: Bool) -> some View {
+    private func strategyRow(strategy: RestoreStrategy, isSelected: Bool) -> some View {
         HStack(spacing: 14) {
             // Icon
             ZStack {
@@ -142,15 +142,15 @@ struct StrategyPickerView: View {
                 // Requirement badges
                 HStack(spacing: 6) {
                     if strategy == .libIMD {
-                        RequirementBadge(text: "C Library", color: .blue)
+                        requirementBadge(text: "C Library", color: .blue)
                     }
                     if strategy == .pureSwift {
-                        RequirementBadge(text: "No deps", color: .green)
-                        RequirementBadge(text: "iOS OK", color: .orange)
+                        requirementBadge(text: "No deps", color: .green)
+                        requirementBadge(text: "iOS OK", color: .orange)
                     }
                     if strategy == .pythonBridge {
-                        RequirementBadge(text: "Python 3", color: .green)
-                        RequirementBadge(text: "pymobiledevice3", color: .green)
+                        requirementBadge(text: "Python 3", color: .green)
+                        requirementBadge(text: "pymobiledevice3", color: .green)
                     }
                 }
                 .padding(.top, 2)
@@ -176,7 +176,7 @@ struct StrategyPickerView: View {
     // MARK: - Requirement Badge
 
     @ViewBuilder
-    private func RequirementBadge(text: String, color: Color) -> some View {
+    private func requirementBadge(text: String, color: Color) -> some View {
         Text(text)
             .font(.system(size: 9, weight: .medium))
             .foregroundColor(color)
@@ -222,6 +222,7 @@ struct StrategyPickerView: View {
 // MARK: - Preview
 
 struct StrategyPickerView_Previews: PreviewProvider {
+    @MainActor
     static var previews: some View {
         StrategyPickerView(engine: BookRestoreEngine())
             .preferredColorScheme(.dark)

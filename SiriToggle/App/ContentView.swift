@@ -89,7 +89,7 @@ struct ContentView: View {
                         || engine.isRunning
                 )
                 .padding(.horizontal, 24)
-                .onChange(of: isEnabled) { newValue in
+                .onChange(of: isEnabled) { oldValue, newValue in
                     Task {
                         await engine.apply(state: newValue ? .enabled : .disabled)
                         if case .success = engine.status {

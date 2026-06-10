@@ -52,7 +52,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
 
     // MARK: - RestoreStrategyProtocol
 
-    func restore(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+    func restore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard FileManager.default.fileExists(atPath: backupDir.path) else {
             throw RestoreError.backupDirNotFound
         }
@@ -199,7 +199,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Main message pump — handle all DLMessage types from the device.
-    private func messagePump(_ conn: TCPConnection, backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+    private func messagePump(_ conn: TCPConnection, backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         var currentProgress: Double = 0.80
 
         while true {
@@ -210,7 +210,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
 
             switch msgType {
             case DLMessage.downloadFiles.rawValue:
-                try await handleDownloadFiles(conn, message: msg!, backupDir: backupDir)
+                try await handleDownloadFiles(conn, message: msg!, backupDir: backupDir, progress: progress)
                 currentProgress += 0.01
                 progress(min(currentProgress, 0.94))
 
@@ -256,7 +256,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     // MARK: - Message Handlers
 
     /// Handle DLMessageDownloadFiles — the device is requesting file data from the backup.
-    private func handleDownloadFiles(_ conn: TCPConnection, message: [Any], backupDir: URL) async throws {
+    private func handleDownloadFiles(_ conn: TCPConnection, message: [Any], backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard message.count >= 2,
               let fileList = message[1] as? [String] else {
             try await sendStatusResponse(conn, status: -6, details: "Invalid download request")
@@ -275,14 +275,14 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
                 let data = try Data(contentsOf: fileURL)
                 // Send file data length as uint32, then the data
                 var length = UInt32(data.count).bigEndian
-                let lengthData = Data(bytes: &length, count: 4)
+                let lengthData = withUnsafeBytes(of: &length) { Data($0) }
                 try await conn.write(lengthData)
                 try await conn.write(data)
                 errors[filePath] = nil  // success
             } else {
                 // File not found — send 0 length
                 var zero: UInt32 = 0
-                let zeroData = Data(bytes: &zero, count: 4)
+                let zeroData = withUnsafeBytes(of: &zero) { Data($0) }
                 try await conn.write(zeroData)
                 errors[filePath] = "File not found in backup"
             }
@@ -403,7 +403,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     private func sendPlist(_ conn: TCPConnection, plist: [String: Any]) async throws {
         let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .binary, options: 0)
         var length = UInt32(data.count).bigEndian
-        let lengthData = Data(bytes: &length, count: 4)
+        let lengthData = withUnsafeBytes(of: &length) { Data($0) }
         try await conn.write(lengthData)
         try await conn.write(data)
     }
@@ -423,7 +423,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     private func sendPlistArray(_ conn: TCPConnection, array: [Any]) async throws {
         let data = try PropertyListSerialization.data(fromPropertyList: array, format: .binary, options: 0)
         var length = UInt32(data.count).bigEndian
-        let lengthData = Data(bytes: &length, count: 4)
+        let lengthData = withUnsafeBytes(of: &length) { Data($0) }
         try await conn.write(lengthData)
         try await conn.write(data)
     }
@@ -473,12 +473,6 @@ actor TCPConnection {
     init(host: String, port: UInt16) {
         self.host = host
         self.port = port
-    }
-
-    deinit {
-        if socketFD >= 0 {
-            close(socketFD)
-        }
     }
 
     /// Connect with timeout.
@@ -577,13 +571,9 @@ actor TCPConnection {
     /// Close the connection.
     func close() {
         if socketFD >= 0 {
-            close_fd(socketFD)
+            Darwin.close(socketFD)
             socketFD = -1
         }
         isConnected = false
-    }
-
-    private func close_fd(_ fd: Int32) {
-        Darwin.close(fd)
     }
 }

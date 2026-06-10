@@ -39,7 +39,7 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
     /// Python 3 executable name.
     private let pythonExecutable = "python3"
 
-    func restore(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+    func restore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard FileManager.default.fileExists(atPath: backupDir.path) else {
             throw RestoreError.backupDirNotFound
         }
@@ -80,7 +80,7 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
     // MARK: - Run Python Script
 
     /// Execute the Python restore script and parse its JSON line output.
-    private func runPythonScript(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
+    private func runPythonScript(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [pythonExecutable, scriptPath, backupDir.path]
@@ -166,7 +166,7 @@ struct PythonBridgeRestoreStrategy: RestoreStrategyProtocol {
     private func handleJSONMessage(
         _ json: [String: Any],
         lastProgress: inout Double,
-        progress: @escaping (Double) -> Void,
+        progress: @escaping @Sendable (Double) -> Void,
         completionStatus: inout Bool?,
         errorMessage: inout String?
     ) {
