@@ -100,7 +100,10 @@ class BookRestoreEngine: ObservableObject {
             try await executeWithFallback(
                 primary: strategy,
                 backupDir: backupDir,
-                progress: { p in MainActor.assumeIsolated { self.setProgress(p) } }
+                progress: { [weak self] p in
+                    guard let self else { return }
+                    self.setProgress(p)
+                }
             )
 
             // Step 7: Cleanup
@@ -136,7 +139,7 @@ class BookRestoreEngine: ObservableObject {
     private func executeWithFallback(
         primary: RestoreStrategy,
         backupDir: URL,
-        progress: @escaping @Sendable (Double) -> Void
+        progress: @escaping (Double) -> Void
     ) async throws {
         let strategies = orderedStrategies(startingWith: primary)
 

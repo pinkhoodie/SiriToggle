@@ -52,7 +52,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
 
     // MARK: - RestoreStrategyProtocol
 
-    func restore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+    func restore(backupDir: URL, progress: @escaping (Double) -> Void) async throws {
         guard FileManager.default.fileExists(atPath: backupDir.path) else {
             throw RestoreError.backupDirNotFound
         }
@@ -199,7 +199,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     }
 
     /// Main message pump — handle all DLMessage types from the device.
-    private func messagePump(_ conn: TCPConnection, backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+    private func messagePump(_ conn: TCPConnection, backupDir: URL, progress: @escaping (Double) -> Void) async throws {
         var currentProgress: Double = 0.80
 
         while true {
@@ -256,7 +256,7 @@ struct PureSwiftRestoreStrategy: RestoreStrategyProtocol {
     // MARK: - Message Handlers
 
     /// Handle DLMessageDownloadFiles — the device is requesting file data from the backup.
-    private func handleDownloadFiles(_ conn: TCPConnection, message: [Any], backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws {
+    private func handleDownloadFiles(_ conn: TCPConnection, message: [Any], backupDir: URL, progress: @escaping (Double) -> Void) async throws {
         guard message.count >= 2,
               let fileList = message[1] as? [String] else {
             try await sendStatusResponse(conn, status: -6, details: "Invalid download request")

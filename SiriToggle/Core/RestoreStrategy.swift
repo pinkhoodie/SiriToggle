@@ -20,7 +20,7 @@ protocol RestoreStrategyProtocol: Sendable {
     ///   - backupDir: URL to the prepared backup directory.
     ///   - progress: Callback for progress updates (0.0...1.0).
     /// - Throws: RestoreError on failure.
-    func restore(backupDir: URL, progress: @escaping @Sendable (Double) -> Void) async throws
+    func restore(backupDir: URL, progress: @escaping (Double) -> Void) async throws
 }
 
 // MARK: - Strategy Enum
