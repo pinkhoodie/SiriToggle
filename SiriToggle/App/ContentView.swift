@@ -91,7 +91,7 @@ struct ContentView: View {
                 .padding(.horizontal, 24)
                 .onChange(of: isEnabled) { oldValue, newValue in
                     Task {
-                        await engine.apply(state: newValue ? .enabled : .disabled)
+                        await engine.apply(state: newValue ? .bypassEnabled : .bypassDisabled)
                         if case .success = engine.status {
                             showRebootAlert = true
                         }

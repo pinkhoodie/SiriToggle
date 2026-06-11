@@ -116,7 +116,7 @@ SiriToggle/
 
 ## How It Works
 
-1. **Build plist**: Creates a modified `GenerativeModels.plist` with `EnhancedSiriWaitlist` set to enabled/disabled
+1. **Build plist**: Creates a modified `GenerativeModels.plist` with `EnhancedSiriWaitlist.Enabled` set to `false` for bypass, or `true` to restore the waitlist gate
 2. **Build backup**: Wraps the plist in a valid iTunes backup format (Manifest.db, Info.plist, etc.)
 3. **Restore**: Uses mobilebackup2 to push the backup to the device, which writes to `/System/Library/FeatureFlags/Domain/GenerativeModels.plist`
 4. **Reboot**: Device must reboot for changes to take effect

@@ -29,7 +29,7 @@ struct InfoSheetView: View {
                         icon: "wrench.and.screwdriver.fill",
                         color: .purple,
                         title: "How it works",
-                        body: "Uses BookRestore (the same technique as Nugget/misaka26) to write a modified GenerativeModels.plist to /System/Library/FeatureFlags/Domain/, setting EnhancedSiriWaitlist to enabled."
+                        body: "Uses BookRestore (the same technique as Nugget/misaka26) to write a modified GenerativeModels.plist to /System/Library/FeatureFlags/Domain/, setting EnhancedSiriWaitlist.Enabled to false."
                     )
 
                     infoRow(
@@ -57,7 +57,7 @@ struct InfoSheetView: View {
                         icon: "arrow.counterclockwise",
                         color: .green,
                         title: "To revert",
-                        body: "Toggle OFF and reboot. This restores the default disabled state of EnhancedSiriWaitlist."
+                        body: "Toggle OFF and reboot. This restores the default waitlist gate (`EnhancedSiriWaitlist.Enabled = true`)."
                     )
 
                     Divider().overlay(Color.gray.opacity(0.3))

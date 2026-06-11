@@ -9,14 +9,20 @@ import Foundation
 /// We only modify EnhancedSiriWaitlist — all other known keys are preserved.
 struct PlistPayloadBuilder {
 
+    /// User-facing bypass state.
+    ///
+    /// Apple gates the feature behind `EnhancedSiriWaitlist.Enabled`.
+    /// The known bypass sets that flag to `false`; restoring default behavior
+    /// sets it back to `true`.
     enum SiriWaitlistState {
-        case enabled
-        case disabled
+        case bypassEnabled
+        case bypassDisabled
     }
 
     /// Build the full GenerativeModels.plist as binary plist Data.
     ///
-    /// - Parameter state: .enabled bypasses the waitlist, .disabled reverts.
+    /// - Parameter state: `.bypassEnabled` disables the waitlist gate;
+    ///   `.bypassDisabled` restores the waitlist gate.
     /// - Returns: Binary plist Data ready to be written to the backup.
     ///
     /// IMPORTANT: The key list below is based on iOS 26/macOS 27 research.
@@ -26,7 +32,7 @@ struct PlistPayloadBuilder {
     ///   plutil -convert xml1 /System/Library/FeatureFlags/Domain/GenerativeModels.plist -o -
     static func build(state: SiriWaitlistState) -> Data {
 
-        let waitlistEnabled = (state == .enabled)
+        let waitlistFlagEnabled = (state == .bypassDisabled)
 
         // Full known structure of GenerativeModels.plist.
         // Each top-level key maps to a dict with at minimum an "Enabled" bool.
@@ -35,7 +41,7 @@ struct PlistPayloadBuilder {
 
             // === TARGET KEY — this is what we're toggling ===
             "EnhancedSiriWaitlist": [
-                "Enabled": waitlistEnabled
+                "Enabled": waitlistFlagEnabled
             ],
 
             // === Preserved keys — do not remove these ===

@@ -29,7 +29,7 @@ struct ToggleCardView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(disabled ? .gray : .white)
 
-                Text("EnhancedSiriWaitlist → \(isOn ? "enabled" : "disabled")")
+                Text("EnhancedSiriWaitlist.Enabled → \(isOn ? "false" : "true")")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(isOn ? Color.purple.opacity(0.9) : Color.gray.opacity(0.7))
             }
